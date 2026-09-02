@@ -18,8 +18,10 @@ desktop artifacts that both the AnroOne Ubuntu Launcher and the in-app
 ```
 AI-Desktop-ubuntu CI (electron-builder: linux-unpacked + AppImage)
    └─> git commit + push main + tag vX.Y.Z → AnroOne-AI-Desktop-ubuntu
-   └─> push DRAFT release to this repo (ZIP + AppImage + latest-linux.yml)
-   └─> gh workflow run audit-and-publish.yml --field tag=vX.Y.Z
+   └─> dist-push.yml (on release published, in AnroOne-AI-Desktop-ubuntu):
+       1. download that release's assets (ZIP + AppImage + latest-linux.yml)
+       2. push them as a DRAFT release to this repo
+       3. gh workflow run audit-and-publish.yml --field tag=vX.Y.Z
                          │
                          ▼
    .github/workflows/audit-and-publish.yml
