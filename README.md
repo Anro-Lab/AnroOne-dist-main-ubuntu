@@ -1,28 +1,30 @@
-# anroone-pro-dist
+# anroone-pro-dist (ubuntu)
 
-Public distribution channel for **AnroOne Pro**.
+Public distribution channel for **AnroOne Pro (Ubuntu / Linux)**.
 
 ## Purpose
 
-This repository is a write-only distribution endpoint. It hosts the Windows desktop installer artifacts that both the AnroOne Pro Launcher and the in-app `electron-updater` auto-update system use.
+This repository is a write-only distribution endpoint. It hosts the Ubuntu
+desktop artifacts that both the AnroOne Ubuntu Launcher and the in-app
+`electron-updater` auto-update system (AppImage path) use.
 
-- **No source code lives here.** Source repos: [`Anro-Lab/AnroOne-Pro-Launcher`](https://github.com/Anro-Lab/AnroOne-Pro-Launcher) (Go launcher), `Anro-Lab/AnroOne-AI-Desktop` (Electron desktop, private).
+- **No source code lives here.** Source repos: [`Anro-Lab/AnroOne-Launcher-ubuntu`](https://github.com/Anro-Lab/AnroOne-Launcher-ubuntu) (Go launcher), `Anro-Lab/AnroOne-AI-Desktop-ubuntu` (Electron desktop, private).
 - **Anonymous read** is allowed — end users do not need GitHub credentials.
 - **Issues are disabled here.** Report problems to the launcher repo:
-  https://github.com/Anro-Lab/AnroOne-Pro-Launcher/issues
+  https://github.com/Anro-Lab/AnroOne-Launcher-ubuntu/issues
 
 ## Release Flow
 
 ```
-AI-Desktop CI (build Electron win-unpacked)
-   └─> git commit + push main + tag vX.Y.Z → AnroOne-AI-Desktop
-   └─> push DRAFT release to this repo (ZIP + NSIS installer + latest.yml)
+AI-Desktop-ubuntu CI (electron-builder: linux-unpacked + AppImage)
+   └─> git commit + push main + tag vX.Y.Z → AnroOne-AI-Desktop-ubuntu
+   └─> push DRAFT release to this repo (ZIP + AppImage + latest-linux.yml)
    └─> gh workflow run audit-and-publish.yml --field tag=vX.Y.Z
-                          │
-                          ▼
+                         │
+                         ▼
    .github/workflows/audit-and-publish.yml
        1. Guard: refuse if audit-self-test is in alarm state
-       2. Download ALL draft assets (zip + exe + latest.yml)
+       2. Download ALL draft assets (zip + AppImage + latest-linux.yml)
        3. Run audit gate on the ZIP
        4. PASS  -> gh release edit --draft=false (publish, all assets included)
           FAIL  -> gh release delete --cleanup-tag + open issue + Discord alert
@@ -38,14 +40,14 @@ Stale drafts (>24h, never published) are cleaned by `stale-draft-cleanup.yml` da
 | Service-account JSON | Custom regex `"type"\s*:\s*"service_account"` + `*-firebase-adminsdk-*.json` | Hit -> FAIL |
 | Forbidden paths | `audit-rules/forbidden-paths.txt` (`*.ts`, `*.env`, `src/`, `*.pem`, `*.key`, `tsconfig.json`, `.git/`) | Hit -> FAIL |
 | Size policy | `audit-rules/size-policy.yml` (warn >=50%, fail >=100% delta vs previous release; first release skipped) | >=100% -> FAIL |
-| Integrity | Must contain `win-unpacked/` dir + `.exe` + `resources/app.asar` (Electron structure) | Missing -> FAIL |
+| Integrity | Must contain `linux-unpacked/` dir + ELF executable + `resources/app.asar` (Electron structure) | Missing -> FAIL |
 
 The audit workflow is itself protected by a daily metamorphic self-test (`audit-self-test.yml`) that runs the gate against fixed clean / dirty fixtures. If a known-dirty fixture ever passes, the repo enters an **alarm state** and `audit-and-publish` refuses to publish anything until fixed.
 
 ## Version Mapping
 
 For any tag `vX.Y.Z`:
-- AI-Desktop source tag: `Anro-Lab/AnroOne-AI-Desktop@vX.Y.Z`
+- AI-Desktop source tag: `Anro-Lab/AnroOne-AI-Desktop-ubuntu@vX.Y.Z`
 - Dist artifact: this repo's release `vX.Y.Z`
 - Launcher embedded default manifest points to the latest known-good release here.
 
@@ -54,7 +56,7 @@ For any tag `vX.Y.Z`:
 - **No source code.** PRs adding `.go`, `.ts`, `.tsx`, `.py`, `.js`, or any `src/` content will be rejected.
 - **No issues.** Issues are filed in the launcher repo (link above).
 - **Direct push to `main` is blocked.** Branch protection requires PR + review.
-- **Releases are created exclusively via the AI-Desktop CI PAT bot.** Manual release creation by humans is disallowed by policy.
+- **Releases are created exclusively via the AI-Desktop-ubuntu CI PAT bot.** Manual release creation by humans is disallowed by policy.
 
 ## Release Asset Format
 
@@ -62,59 +64,71 @@ Each published release contains **three assets**:
 
 ### 1. `ai-desktop-X.Y.Z.zip` — App bundle for the Go Launcher
 
-Contains `win-unpacked/` with the full Electron application. The Go Launcher downloads this ZIP and installs it in-place.
+Contains `linux-unpacked/` with the full Electron application. The Go Launcher downloads this ZIP and installs it in-place.
 
 ```
 ai-desktop-X.Y.Z.zip
-└── win-unpacked/
-    ├── AnroOne Pro.exe      ← main Windows executable
+└── linux-unpacked/
+    ├── anroone-pro           ← main Linux executable (ELF, chmod +x)
+    ├── chrome-sandbox        ← Electron sandbox helper
+    ├── icudtl.dat
     ├── locales/
     ├── resources/
-    │   ├── app.asar         ← Electron app bundle
+    │   ├── app.asar          ← Electron app bundle
     │   └── ...
-    └── *.dll / *.pak / ...
+    └── *.so / *.pak / ...
 ```
 
-> **Integrity check** runs against this ZIP: must contain `win-unpacked/`, an `.exe`, and `resources/app.asar`.
+> **Integrity check** runs against this ZIP: must contain `linux-unpacked/`, an ELF executable directly under it, and `resources/app.asar`.
 
-### 2. `AnroOne-Pro-Setup-X.Y.Z.exe` — NSIS Installer
+### 2. `AnroOne-Pro-X.Y.Z.AppImage` — AppImage (installer + executable)
 
-Full NSIS installer for the app. Used by:
-- **In-app auto-update** (`electron-updater` fallback path): if `latest.yml` lookup fails, the updater finds this asset, downloads it, and spawns it with UAC elevation via PowerShell `Start-Process -Verb RunAs`.
-- **Manual installation** by end users or IT admins.
+Single-file portable AppImage that doubles as both the **installer** and the
+**executable** — the Linux replacement for the Windows NSIS `.exe`. Used by:
 
-> Filename uses hyphens (not spaces) to match the `url:` field in `latest.yml`.
+- **In-app auto-update** (`electron-updater`): on Linux the updater is
+  `AppImageUpdater`; it downloads the new AppImage referenced in
+  `latest-linux.yml`, verifies SHA-512, and replaces the running AppImage
+  in-place (requires the app itself to be running from an AppImage).
+- **Manual installation** by end users or IT admins:
 
-### 3. `latest.yml` — electron-updater version manifest
+  ```bash
+  chmod +x AnroOne-Pro-X.Y.Z.AppImage
+  ./AnroOne-Pro-X.Y.Z.AppImage
+  ```
 
-Generated by `electron-builder`. Consumed by `electron-updater`'s primary update path:
+  If the system lacks FUSE, run it with `--appimage-extract-and-run`.
+
+> Filename uses hyphens (no spaces) to match the `url:` field in `latest-linux.yml`.
+
+### 3. `latest-linux.yml` — electron-updater version manifest
+
+Generated by `electron-builder`. Consumed by `electron-updater`'s Linux
+update path:
 
 ```yaml
 version: X.Y.Z
 files:
-  - url: AnroOne-Pro-Setup-X.Y.Z.exe
+  - url: AnroOne-Pro-X.Y.Z.AppImage
     sha512: <base64-sha512>
-path: AnroOne-Pro-Setup-X.Y.Z.exe
+path: AnroOne-Pro-X.Y.Z.AppImage
 sha512: <base64-sha512>
 releaseDate: 'YYYY-MM-DDTHH:MM:SS.sssZ'
 ```
 
-`electron-updater` fetches this file via the GitHub provider, compares the version, prompts the user, then downloads and verifies (SHA-512) the NSIS installer before running it.
+`electron-updater` fetches this file via the GitHub provider, compares the
+version, prompts the user, then downloads and verifies (SHA-512) the AppImage
+before applying the update.
 
-## Release Notes
+## Linux-Specific Notes
 
-### v0.10.17
-
-**Auto-Update Flow Fixes** — resolved multiple issues that prevented in-app updates from completing:
-
-| Issue | Root Cause | Fix |
-|-------|-----------|-----|
-| Update appeared to complete but app stayed on old version | `app.quit()` is async; Electron process kept file lock; NSIS installer couldn't overwrite EXE | Changed to `app.exit(0)` (immediate); PowerShell `Wait-Process` waits for process to fully exit before launching installer |
-| SHA-512 checksum mismatch | `electron-builder` generates `latest.yml` SHA-512 before code signing; signing changes EXE bytes | Build script recomputes SHA-512 of signed EXE and updates `latest.yml` after signing |
-| Publisher verification failure | `publisherName: "Anrotec"` only matches CN field; cert DN is `CN=AnroOne Pro Desktop` | Updated `publisherName` to full DN; also disabled verification via `_verifyUpdateCodeSignature` override |
-| Double percentage in splash screen | `updateProgress` always appended `percent%` even when `customStatus` already contained a percentage | Added early return when `customStatus` is provided |
-
----
+- `latest-linux.yml` (not `latest.yml`) is the manifest filename
+  `electron-updater` requests on Linux; keep it as a release asset.
+- AppImage updates only work when the app runs **from** an AppImage. The
+  Go-Launcher (zip / `linux-unpacked`) install path does not self-update via
+  AppImageUpdater; the Launcher itself re-downloads the ZIP on new versions.
+- Linux artifacts are not code-signed, so no SHA-512 recompute-after-signing
+  step is needed (unlike the Windows NSIS flow).
 
 ## Runner
 

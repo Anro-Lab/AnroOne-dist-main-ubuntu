@@ -13,7 +13,7 @@ inputs:
     required: false
     default: ''
   require-integrity:
-    description: 'If true, require win-unpacked/ and docker-compose.yml to exist'
+    description: 'If true, require linux-unpacked/ with an ELF executable and resources/app.asar'
     required: false
     default: 'true'
 outputs:
@@ -190,20 +190,33 @@ runs:
           exit 0
         fi
         missing=""
-        if ! find "${UNPACK_DIR}" -maxdepth 4 -type d -iname 'win-unpacked' | grep -q .; then
-          missing="${missing} win-unpacked/"
-        fi
-        if ! find "${UNPACK_DIR}" -maxdepth 5 -type f -iname '*.exe' | grep -q .; then
-          missing="${missing} *.exe"
+        ldir=$(find "${UNPACK_DIR}" -maxdepth 4 -type d -iname 'linux-unpacked' -print -quit 2>/dev/null)
+        if [ -z "$ldir" ]; then
+          missing="${missing} linux-unpacked/"
         fi
         if ! find "${UNPACK_DIR}" -maxdepth 5 -type f -name 'app.asar' | grep -q .; then
           missing="${missing} app.asar"
+        fi
+        # Main executable: Linux binaries are extensionless, so detect the ELF
+        # magic (\x7fELF) on files directly under linux-unpacked/ instead of a
+        # name glob like the Windows *.exe check.
+        elf=""
+        if [ -n "$ldir" ]; then
+          while IFS= read -r -d '' f; do
+            if [ "$(od -An -N4 -tx1 "$f" 2>/dev/null | tr -d ' \n')" = "7f454c46" ]; then
+              elf="$f"
+              break
+            fi
+          done < <(find "$ldir" -maxdepth 1 -type f -print0)
+        fi
+        if [ -z "$elf" ]; then
+          missing="${missing} ELF-executable"
         fi
         if [ -n "$missing" ]; then
           echo "INTEGRITY FAIL: missing required entries:${missing}"
           exit 1
         fi
-        echo "integrity: ok"
+        echo "integrity: ok (linux-unpacked + $(basename "$elf") + app.asar)"
         exit 0
 
     - name: Aggregate result

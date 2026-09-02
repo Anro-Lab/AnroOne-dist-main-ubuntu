@@ -21,6 +21,8 @@ jobs:
     env:
       TAG: ${{ github.event.client_payload.tag || inputs.tag }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Upstream source repo whose CI pushes draft releases here.
+      SOURCE_REPO: Anro-Lab/AnroOne-AI-Desktop-ubuntu
     steps:
       - name: Validate inputs
         run: |
@@ -56,7 +58,7 @@ jobs:
           echo "downloaded files:"
           ls -la ./_dl
 
-      - name: Unpack zip
+      - name: Unpack zip + verify release assets
         id: unpack
         run: |
           set -u
@@ -64,6 +66,17 @@ jobs:
           zipfile=$(find ./_dl -maxdepth 1 -type f -iname '*.zip' | head -1)
           if [ -z "$zipfile" ]; then
             echo "::error::no zip asset found in release ${TAG}"
+            exit 1
+          fi
+          # Draft releases must carry all three contracted assets:
+          # app bundle ZIP + AppImage + latest-linux.yml (electron-updater manifest).
+          appimage=$(find ./_dl -maxdepth 1 -type f -iname '*.AppImage' | head -1)
+          if [ -z "$appimage" ]; then
+            echo "::error::no .AppImage asset found in release ${TAG} (expected alongside the zip)"
+            exit 1
+          fi
+          if ! find ./_dl -maxdepth 1 -type f -iname 'latest-linux.yml' | grep -q .; then
+            echo "::error::no latest-linux.yml asset found in release ${TAG} (electron-updater manifest)"
             exit 1
           fi
           new_size=$(stat -c '%s' "$zipfile" 2>/dev/null || stat -f '%z' "$zipfile")
@@ -117,11 +130,12 @@ jobs:
           set -u
           echo "::error::audit FAIL reason=${REASON}; deleting draft ${TAG}"
           gh release delete "${TAG}" --repo "${{ github.repository }}" --cleanup-tag --yes || true
-          body=$(printf 'Dist repo audit gate rejected tag `%s`.\n\nReason: `%s`\n\nWorkflow run: %s/%s/actions/runs/%s\n\nDraft release was deleted and tag cleaned up. AI-Desktop CI must re-tag and re-push after fixing the artifact.' \
+          body=$(printf 'Dist repo audit gate rejected tag `%s`.\n\nReason: `%s`\n\nWorkflow run: %s/%s/actions/runs/%s\n\nDraft release was deleted and tag cleaned up. %s CI must re-tag and re-push after fixing the artifact.' \
             "${TAG}" "${REASON}" \
-            "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+            "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}" \
+            "${SOURCE_REPO}")
           gh issue create \
-            --repo Anro-Lab/AnroOne-Pro-Launcher \
+            --repo Anro-Lab/AnroOne-Launcher-ubuntu \
             --title "Audit FAIL on dist tag ${TAG}" \
             --body "${body}" || true
           if [ -n "${DISCORD_WEBHOOK_URL:-}" ]; then
